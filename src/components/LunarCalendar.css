@@ -1,0 +1,87 @@
+.calendar-container {
+  padding: 24px;
+}
+
+.calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.calendar-header h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.cal-controls button {
+  padding: 6px 12px;
+  margin-left: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+.cal-controls button:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.cal-day-header {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  padding-bottom: 8px;
+}
+
+.cal-cell {
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+
+.cal-cell.has-date {
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+}
+
+.cal-cell.has-date:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.solar-date {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.lunar-date {
+  font-size: 0.65rem;
+  color: var(--accent-color);
+  margin-top: 2px;
+}
+
+.gcal-events {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border-glass);
+}
+
+.gcal-events h3 {
+  font-size: 1.1rem;
+  margin-bottom: 12px;
+}
+
+.placeholder-text {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
