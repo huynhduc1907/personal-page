@@ -96,14 +96,7 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 
 const upload = multer({
   dest: UPLOADS_DIR,
-  limits: { fileSize: 200 * 1024 * 1024 }, // 200MB
-  fileFilter: (_req, file, cb) => {
-    if (file.mimetype.startsWith('audio/') || file.originalname.endsWith('.wav')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Chỉ chấp nhận file audio (WAV)'));
-    }
-  }
+  limits: { fileSize: 200 * 1024 * 1024 }, // 200MB — accept any audio format
 });
 
 app.get('/api/transcribe/check', (req, res) => {
@@ -139,10 +132,17 @@ app.post('/api/transcribe', upload.single('audio'), (req, res) => {
   const audioPath = req.file.path;
   const scriptPath = path.join(__dirname, 'transcribe.py');
 
-  console.log(`Transcribing: ${req.file.originalname} (${(req.file.size / 1024 / 1024).toFixed(1)}MB)`);
+  const model = req.body?.model || 'medium';
+  console.log(`Transcribing: ${req.file.originalname} (${(req.file.size / 1024 / 1024).toFixed(1)}MB) model=${model}`);
 
-  const pythonProcess = spawn('python', [scriptPath, audioPath, 'vi'], {
-    cwd: __dirname
+  // Rename temp file to include original extension so transcribe.py can detect format
+  const origExt = path.extname(req.file.originalname) || '.wav';
+  const audioPathWithExt = audioPath + origExt;
+  fs.renameSync(audioPath, audioPathWithExt);
+
+  const pythonProcess = spawn('python', [scriptPath, audioPathWithExt, 'vi', model], {
+    cwd: __dirname,
+    env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
   });
 
   let outputData = '';
@@ -155,7 +155,7 @@ app.post('/api/transcribe', upload.single('audio'), (req, res) => {
   });
 
   pythonProcess.on('close', (code) => {
-    fs.unlink(audioPath, () => {});
+    fs.unlink(audioPathWithExt, () => {});
 
     if (code !== 0) {
       // Python may have printed a JSON error to stdout (e.g. missing deps)
