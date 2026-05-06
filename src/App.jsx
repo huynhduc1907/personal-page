@@ -3,6 +3,7 @@ import Sidebar from './components/Sidebar';
 import Work from './pages/Work';
 import Entertainment from './pages/Entertainment';
 import Investment from './pages/Investment';
+import Transcribe from './pages/Transcribe';
 import './index.css';
 
 function App() {
@@ -16,6 +17,7 @@ function App() {
             <Route path="/work" element={<Work />} />
             <Route path="/entertainment" element={<Entertainment />} />
             <Route path="/investment" element={<Investment />} />
+            <Route path="/transcribe" element={<Transcribe />} />
           </Routes>
         </main>
       </div>

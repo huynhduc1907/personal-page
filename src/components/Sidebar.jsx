@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { FiBriefcase, FiAperture, FiTrendingUp } from 'react-icons/fi';
+import { FiBriefcase, FiAperture, FiTrendingUp, FiMic } from 'react-icons/fi';
 import './Sidebar.css';
 
 const Sidebar = () => {
@@ -8,6 +8,7 @@ const Sidebar = () => {
     { name: 'Work', path: '/work', icon: <FiBriefcase /> },
     { name: 'Entertainment', path: '/entertainment', icon: <FiAperture /> },
     { name: 'Investment', path: '/investment', icon: <FiTrendingUp /> },
+    { name: 'Transcribe', path: '/transcribe', icon: <FiMic /> },
   ];
 
   return (
