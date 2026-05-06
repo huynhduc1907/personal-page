@@ -96,14 +96,32 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 
 const upload = multer({
   dest: UPLOADS_DIR,
-  limits: { fileSize: 200 * 1024 * 1024 }, // 200MB
-  fileFilter: (_req, file, cb) => {
-    if (file.mimetype.startsWith('audio/') || file.originalname.endsWith('.wav')) {
-      cb(null, true);
+  limits: { fileSize: 200 * 1024 * 1024 }, // 200MB — accept any audio format
+});
+
+app.get('/api/transcribe/check', (req, res) => {
+  const check = spawn('python', ['-c',
+    'import whisper, soundfile, numpy; print("ok")'
+  ]);
+  let out = '', err = '';
+  check.stdout.on('data', d => { out += d.toString(); });
+  check.stderr.on('data', d => { err += d.toString(); });
+  check.on('close', code => {
+    if (code === 0) {
+      res.json({ ok: true });
     } else {
-      cb(new Error('Chỉ chấp nhận file audio (WAV)'));
+      const missing = ['whisper', 'soundfile', 'numpy'].filter(m =>
+        err.includes(`No module named '${m}'`) || out.includes(`No module named '${m}'`)
+      );
+      res.json({
+        ok: false,
+        error: missing.length
+          ? `Thiếu thư viện: ${missing.join(', ')}`
+          : 'Python error: ' + (err || out).slice(0, 200),
+        fix: 'pip install openai-whisper soundfile'
+      });
     }
-  }
+  });
 });
 
 app.post('/api/transcribe', upload.single('audio'), (req, res) => {
@@ -114,10 +132,17 @@ app.post('/api/transcribe', upload.single('audio'), (req, res) => {
   const audioPath = req.file.path;
   const scriptPath = path.join(__dirname, 'transcribe.py');
 
-  console.log(`Transcribing: ${req.file.originalname} (${(req.file.size / 1024 / 1024).toFixed(1)}MB)`);
+  const model = req.body?.model || 'medium';
+  console.log(`Transcribing: ${req.file.originalname} (${(req.file.size / 1024 / 1024).toFixed(1)}MB) model=${model}`);
 
-  const pythonProcess = spawn('python', [scriptPath, audioPath, 'vi'], {
-    cwd: __dirname
+  // Rename temp file to include original extension so transcribe.py can detect format
+  const origExt = path.extname(req.file.originalname) || '.wav';
+  const audioPathWithExt = audioPath + origExt;
+  fs.renameSync(audioPath, audioPathWithExt);
+
+  const pythonProcess = spawn('python', [scriptPath, audioPathWithExt, 'vi', model], {
+    cwd: __dirname,
+    env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
   });
 
   let outputData = '';
@@ -130,14 +155,19 @@ app.post('/api/transcribe', upload.single('audio'), (req, res) => {
   });
 
   pythonProcess.on('close', (code) => {
-    fs.unlink(audioPath, () => {});
+    fs.unlink(audioPathWithExt, () => {});
 
     if (code !== 0) {
-      console.error('Transcription failed:', errorData);
-      return res.status(500).json({
-        error: 'Transcription thất bại',
-        details: errorData
-      });
+      // Python may have printed a JSON error to stdout (e.g. missing deps)
+      let pythonError = null;
+      try {
+        const parsed = JSON.parse(outputData.trim());
+        if (parsed.error) pythonError = parsed.error;
+      } catch {}
+
+      const message = pythonError || 'Transcription thất bại';
+      console.error('Transcription failed:', message, errorData);
+      return res.status(500).json({ error: message, details: errorData });
     }
 
     try {

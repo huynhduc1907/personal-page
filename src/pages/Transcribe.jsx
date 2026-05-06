@@ -9,6 +9,7 @@ import './Transcribe.css';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const CHUNK_DURATION = 180; // 3 minutes per chunk (seconds)
+const API = 'http://localhost:3001';
 
 // ── WAV encoding ─────────────────────────────────────────────────────────────
 function writeString(view, offset, str) {
@@ -170,11 +171,24 @@ export default function Transcribe() {
   const [phase, setPhase] = useState('upload'); // upload | preparing | processing | review | template
   const [dragOver, setDragOver] = useState(false);
   const [prepProgress, setPrepProgress] = useState('');
-  const [chunks, setChunks] = useState([]);     // array of chunk objects
+  const [chunks, setChunks] = useState([]);
   const [form, setForm] = useState(defaultForm);
   const [copied, setCopied] = useState(false);
+  const [setupStatus, setSetupStatus] = useState(null);
+  const [model, setModel] = useState('medium'); // base | medium | large-v3
   const fileInputRef = useRef(null);
   const abortRef = useRef(false);
+
+  // ── Setup check
+  const checkSetup = async () => {
+    setSetupStatus('checking');
+    try {
+      const res = await axios.get(`${API}/api/transcribe/check`, { timeout: 15000 });
+      setSetupStatus(res.data);
+    } catch (e) {
+      setSetupStatus({ ok: false, error: 'Không kết nối được server backend (http://localhost:3001). Hãy chạy: npm run start:all', fix: null });
+    }
+  };
 
   // ── Update single chunk field
   const patchChunk = (idx, patch) =>
@@ -209,20 +223,22 @@ export default function Transcribe() {
         try {
           const fd = new FormData();
           fd.append('audio', prepared[i].wavBlob, `chunk_${i}.wav`);
+          fd.append('model', model);
 
-          const res = await axios.post('http://localhost:3001/api/transcribe', fd, {
+          const res = await axios.post(`${API}/api/transcribe`, fd, {
             headers: { 'Content-Type': 'multipart/form-data' },
-            timeout: 8 * 60 * 1000, // 8 min per 3-min chunk is generous
+            timeout: 10 * 60 * 1000,
           });
 
           if (res.data.error) throw new Error(res.data.error);
 
           patchChunk(i, { status: 'done', text: res.data.text || '' });
         } catch (err) {
-          patchChunk(i, {
-            status: 'error',
-            error: err.response?.data?.error || err.message || 'Lỗi không xác định',
-          });
+          const serverErr = err.response?.data?.error;
+          const serverDetail = err.response?.data?.details;
+          const errMsg = serverErr || err.message || 'Lỗi không xác định';
+          const detail = serverDetail ? serverDetail.slice(0, 400) : '';
+          patchChunk(i, { status: 'error', error: errMsg, detail });
           // Continue to next chunk instead of stopping
         }
       }
@@ -240,16 +256,19 @@ export default function Transcribe() {
     try {
       const fd = new FormData();
       fd.append('audio', chunks[idx].wavBlob, `chunk_${idx}.wav`);
-      const res = await axios.post('http://localhost:3001/api/transcribe', fd, {
+      const res = await axios.post(`${API}/api/transcribe`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 8 * 60 * 1000,
+        timeout: 10 * 60 * 1000,
       });
       if (res.data.error) throw new Error(res.data.error);
       patchChunk(idx, { status: 'done', text: res.data.text || '' });
     } catch (err) {
+      const serverErr = err.response?.data?.error;
+      const serverDetail = err.response?.data?.details;
       patchChunk(idx, {
         status: 'error',
-        error: err.response?.data?.error || err.message,
+        error: serverErr || err.message,
+        detail: serverDetail ? serverDetail.slice(0, 400) : '',
       });
     }
   };
@@ -350,10 +369,51 @@ export default function Transcribe() {
             </div>
           </div>
 
+          <div className="model-selector glass-panel">
+            <label>Model Whisper</label>
+            <div className="model-options">
+              {[
+                { value: 'base',     label: 'Base',     desc: '~140 MB · nhanh, kém tiếng Việt' },
+                { value: 'medium',   label: 'Medium',   desc: '~1.5 GB · khuyến nghị cho TV' },
+                { value: 'large-v3', label: 'Large-v3', desc: '~3 GB · chính xác nhất' },
+              ].map(m => (
+                <button
+                  key={m.value}
+                  className={`model-btn ${model === m.value ? 'active' : ''}`}
+                  onClick={() => setModel(m.value)}
+                >
+                  <span className="model-name">{m.label}</span>
+                  <span className="model-desc">{m.desc}</span>
+                </button>
+              ))}
+            </div>
+            <p className="model-note">
+              Lần đầu chọn model sẽ tự tải về. Medium ~1.5GB, tải 1 lần rồi cache lại.
+            </p>
+          </div>
+
           <div className="setup-info glass-panel">
-            <h4>Yêu cầu (lần đầu)</h4>
-            <pre>pip install openai-whisper soundfile</pre>
-            <p>Audio được chia thành đoạn {CHUNK_DURATION / 60} phút để tránh timeout. Không cần ffmpeg.</p>
+            <div className="setup-top">
+              <div>
+                <h4>Yêu cầu (lần đầu)</h4>
+                <pre>pip install openai-whisper soundfile</pre>
+                <p>Audio tự chia thành đoạn {CHUNK_DURATION / 60} phút để tránh timeout. Không cần ffmpeg.</p>
+              </div>
+              <button className="btn-check" onClick={checkSetup} disabled={setupStatus === 'checking'}>
+                {setupStatus === 'checking' ? <><div className="spinner-xs" /> Đang kiểm tra...</> : '🔍 Kiểm tra cài đặt'}
+              </button>
+            </div>
+            {setupStatus && setupStatus !== 'checking' && (
+              <div className={`check-result ${setupStatus.ok ? 'ok' : 'fail'}`}>
+                {setupStatus.ok
+                  ? '✅ Sẵn sàng — openai-whisper và soundfile đã cài đặt.'
+                  : <>
+                      ❌ {setupStatus.error}
+                      {setupStatus.fix && <pre>{setupStatus.fix}</pre>}
+                    </>
+                }
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -429,7 +489,11 @@ export default function Transcribe() {
 
                 {chunk.status === 'error' && (
                   <div className="chunk-error">
-                    <FiAlertCircle /> {chunk.error}
+                    <div className="chunk-error-main"><FiAlertCircle /> {chunk.error}</div>
+                    {chunk.detail && <pre className="chunk-error-detail">{chunk.detail}</pre>}
+                    {chunk.error?.includes('pip install') && (
+                      <pre className="install-hint">pip install openai-whisper soundfile</pre>
+                    )}
                   </div>
                 )}
 
